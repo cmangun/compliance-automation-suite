@@ -3,16 +3,16 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![HIPAA Compliant](https://img.shields.io/badge/HIPAA-Compliant-green.svg)](#compliance)
 
-**Automated compliance validation for healthcare AI systems - HIPAA, FDA, and SOC 2.**
+Automated compliance validation for healthcare AI systems - HIPAA, FDA, and SOC 2.
 
-## 🎯 Business Impact
+## Business Impact
 
 - **Automated compliance checking** against HIPAA security rule
 - **Pre-defined AI-specific controls** for healthcare ML systems
 - **Risk-scored findings** with prioritized remediation
 - **Audit-ready reporting** for regulatory submissions
 
-## ✨ Key Features
+## Key Features
 
 - **10 AI-Specific HIPAA Controls** for ML systems
 - **Automated Evidence Checking** for compliance validation
@@ -20,7 +20,7 @@
 - **Remediation Recommendations** with implementation guidance
 - **Assessment History** for compliance tracking
 
-## 🚀 Quick Start
+## Quick Start
 
 ```python
 from src.hipaa.validator import HIPAAValidator
@@ -43,7 +43,7 @@ print(f"Status: {report.overall_status}")
 print(f"Compliance Rate: {report.summary['compliance_rate']}%")
 ```
 
-## 📋 Included Controls
+## Included Controls
 
 | Control ID | Name | Type |
 |------------|------|------|
@@ -58,6 +58,6 @@ print(f"Compliance Rate: {report.summary['compliance_rate']}%")
 | HIPAA-AI-009 | Incident Response | Required |
 | HIPAA-AI-010 | Model Explainability | Addressable |
 
-## 👤 Author
+## Author
 
 **Christopher Mangun** - [LinkedIn](https://linkedin.com/in/cmangun)
