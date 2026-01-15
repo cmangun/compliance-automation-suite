@@ -1,27 +1,17 @@
 """
 HIPAA Compliance Validator
 
-Automated HIPAA compliance checking for healthcare AI systems:
-- Administrative safeguards
-- Physical safeguards
-- Technical safeguards
-- Documentation requirements
-- Risk assessment
+Comprehensive HIPAA compliance validation for healthcare systems
+covering administrative, physical, and technical safeguards.
 """
 
-from __future__ import annotations
-
-import hashlib
-from collections import defaultdict
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import structlog
-from pydantic import BaseModel, Field
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class HIPAACategory(str, Enum):
@@ -39,531 +29,513 @@ class ComplianceStatus(str, Enum):
     
     COMPLIANT = "compliant"
     NON_COMPLIANT = "non_compliant"
-    PARTIAL = "partial"
+    PARTIALLY_COMPLIANT = "partially_compliant"
     NOT_APPLICABLE = "not_applicable"
-    PENDING_REVIEW = "pending_review"
-
-
-class RiskLevel(str, Enum):
-    """Risk severity levels."""
-    
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-class ControlType(str, Enum):
-    """Types of controls."""
-    
-    REQUIRED = "required"
-    ADDRESSABLE = "addressable"
+    NEEDS_REVIEW = "needs_review"
 
 
 @dataclass
-class ComplianceControl:
-    """A HIPAA compliance control."""
+class ComplianceCheck:
+    """A single HIPAA compliance check."""
     
-    control_id: str
+    check_id: str
     name: str
     description: str
     category: HIPAACategory
-    control_type: ControlType
-    regulation_reference: str  # e.g., "164.308(a)(1)(i)"
-    implementation_guidance: str
-    evidence_required: list[str]
-    
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "control_id": self.control_id,
-            "name": self.name,
-            "description": self.description,
-            "category": self.category.value,
-            "control_type": self.control_type.value,
-            "regulation_reference": self.regulation_reference,
-            "implementation_guidance": self.implementation_guidance,
-            "evidence_required": self.evidence_required,
-        }
-
-
-@dataclass
-class ControlCheck:
-    """Result of checking a compliance control."""
-    
-    control_id: str
     status: ComplianceStatus
-    findings: list[str]
-    evidence_provided: list[str]
-    recommendations: list[str]
-    risk_level: RiskLevel | None = None
-    checked_at: datetime = field(default_factory=datetime.utcnow)
-    checked_by: str = "automated"
-    
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "control_id": self.control_id,
-            "status": self.status.value,
-            "findings": self.findings,
-            "evidence_provided": self.evidence_provided,
-            "recommendations": self.recommendations,
-            "risk_level": self.risk_level.value if self.risk_level else None,
-            "checked_at": self.checked_at.isoformat(),
-            "checked_by": self.checked_by,
-        }
+    findings: list[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
+    evidence: dict[str, Any] = field(default_factory=dict)
+    cfr_reference: str = ""
 
 
 @dataclass
-class ComplianceReport:
-    """Comprehensive compliance assessment report."""
+class HIPAAComplianceReport:
+    """Complete HIPAA compliance report."""
     
-    report_id: str
-    assessment_name: str
     organization: str
-    scope: str
     assessment_date: datetime
     assessor: str
+    checks: list[ComplianceCheck]
     overall_status: ComplianceStatus
-    control_checks: list[ControlCheck]
-    summary: dict[str, Any]
-    recommendations: list[str]
-    next_assessment_date: datetime | None = None
+    risk_score: float
+    
+    @property
+    def summary(self) -> dict[str, int]:
+        """Get status summary."""
+        summary = {}
+        for status in ComplianceStatus:
+            summary[status.value] = sum(
+                1 for c in self.checks if c.status == status
+            )
+        return summary
     
     def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
         return {
-            "report_id": self.report_id,
-            "assessment_name": self.assessment_name,
             "organization": self.organization,
-            "scope": self.scope,
             "assessment_date": self.assessment_date.isoformat(),
             "assessor": self.assessor,
             "overall_status": self.overall_status.value,
-            "control_checks": [c.to_dict() for c in self.control_checks],
+            "risk_score": self.risk_score,
             "summary": self.summary,
-            "recommendations": self.recommendations,
-            "next_assessment_date": (
-                self.next_assessment_date.isoformat()
-                if self.next_assessment_date else None
-            ),
+            "checks": [
+                {
+                    "check_id": c.check_id,
+                    "name": c.name,
+                    "category": c.category.value,
+                    "status": c.status.value,
+                    "findings": c.findings,
+                    "recommendations": c.recommendations,
+                    "cfr_reference": c.cfr_reference,
+                }
+                for c in self.checks
+            ],
         }
-
-
-# Standard HIPAA controls for AI systems
-HIPAA_AI_CONTROLS = [
-    ComplianceControl(
-        control_id="HIPAA-AI-001",
-        name="Risk Analysis",
-        description="Conduct accurate and thorough assessment of potential risks and vulnerabilities to PHI in AI systems",
-        category=HIPAACategory.ADMINISTRATIVE,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.308(a)(1)(ii)(A)",
-        implementation_guidance="Document all PHI data flows through AI models, identify threats, and assess likelihood and impact",
-        evidence_required=[
-            "Risk assessment documentation",
-            "Data flow diagrams",
-            "Threat analysis",
-            "Risk mitigation plan",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-002",
-        name="Access Control",
-        description="Implement technical policies and procedures for AI systems that maintain PHI",
-        category=HIPAACategory.TECHNICAL,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.312(a)(1)",
-        implementation_guidance="Implement role-based access control, unique user identification, and access logging",
-        evidence_required=[
-            "Access control policy",
-            "User provisioning procedures",
-            "Access logs",
-            "Role definitions",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-003",
-        name="Audit Controls",
-        description="Implement mechanisms to record and examine activity in AI systems containing PHI",
-        category=HIPAACategory.TECHNICAL,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.312(b)",
-        implementation_guidance="Log all access to PHI, model predictions involving PHI, and administrative actions",
-        evidence_required=[
-            "Audit logging configuration",
-            "Log retention policy",
-            "Sample audit logs",
-            "Log review procedures",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-004",
-        name="Data Encryption",
-        description="Implement encryption for PHI at rest and in transit in AI systems",
-        category=HIPAACategory.TECHNICAL,
-        control_type=ControlType.ADDRESSABLE,
-        regulation_reference="164.312(a)(2)(iv), 164.312(e)(2)(ii)",
-        implementation_guidance="Use AES-256 encryption at rest, TLS 1.2+ in transit, and secure key management",
-        evidence_required=[
-            "Encryption policy",
-            "Encryption configuration",
-            "Key management procedures",
-            "Certificate management",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-005",
-        name="PHI De-identification",
-        description="Ensure AI training data and outputs comply with de-identification requirements",
-        category=HIPAACategory.TECHNICAL,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.514(a)-(b)",
-        implementation_guidance="Use Safe Harbor or Expert Determination method, validate de-identification before AI processing",
-        evidence_required=[
-            "De-identification procedures",
-            "Safe Harbor checklist",
-            "Expert determination (if applicable)",
-            "Re-identification risk assessment",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-006",
-        name="Minimum Necessary",
-        description="Limit PHI used in AI systems to minimum necessary for intended purpose",
-        category=HIPAACategory.ADMINISTRATIVE,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.502(b), 164.514(d)",
-        implementation_guidance="Document data requirements, implement data filtering, review periodically",
-        evidence_required=[
-            "Data minimization policy",
-            "Use case documentation",
-            "Data inventory",
-            "Periodic review records",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-007",
-        name="Business Associate Agreements",
-        description="Ensure BAAs are in place with AI vendors processing PHI",
-        category=HIPAACategory.ORGANIZATIONAL,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.308(b)(1), 164.502(e)",
-        implementation_guidance="Execute BAAs with all AI service providers, cloud providers, and data processors",
-        evidence_required=[
-            "Signed BAAs",
-            "Vendor inventory",
-            "BAA review schedule",
-            "Subcontractor agreements",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-008",
-        name="Workforce Training",
-        description="Train workforce on HIPAA requirements for AI systems",
-        category=HIPAACategory.ADMINISTRATIVE,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.308(a)(5)(i)",
-        implementation_guidance="Provide role-specific training on AI and PHI, document completion, refresh annually",
-        evidence_required=[
-            "Training materials",
-            "Training completion records",
-            "Training schedule",
-            "Competency assessments",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-009",
-        name="Incident Response",
-        description="Implement procedures to address security incidents involving AI systems",
-        category=HIPAACategory.ADMINISTRATIVE,
-        control_type=ControlType.REQUIRED,
-        regulation_reference="164.308(a)(6)(i)",
-        implementation_guidance="Define incident classification, response procedures, and breach notification process",
-        evidence_required=[
-            "Incident response plan",
-            "Breach notification procedures",
-            "Incident log",
-            "Post-incident reviews",
-        ],
-    ),
-    ComplianceControl(
-        control_id="HIPAA-AI-010",
-        name="Model Explainability",
-        description="Maintain documentation of AI model decision-making for PHI-related decisions",
-        category=HIPAACategory.ADMINISTRATIVE,
-        control_type=ControlType.ADDRESSABLE,
-        regulation_reference="164.530(j)",
-        implementation_guidance="Document model logic, maintain explainability reports, support patient access requests",
-        evidence_required=[
-            "Model documentation",
-            "Explainability reports",
-            "Patient request procedures",
-            "Decision audit trail",
-        ],
-    ),
-]
-
-
-class HIPAAValidatorConfig(BaseModel):
-    """Configuration for HIPAA validator."""
-    
-    include_addressable: bool = True
-    risk_threshold: RiskLevel = RiskLevel.MEDIUM
-    auto_recommendations: bool = True
-    detailed_findings: bool = True
 
 
 class HIPAAValidator:
     """
-    Automated HIPAA compliance validator for AI systems.
+    HIPAA compliance validator.
     
-    Features:
-    - Control-based assessment
-    - Automated evidence checking
-    - Risk scoring
-    - Remediation recommendations
-    - Audit-ready reporting
+    Validates compliance against:
+    - 45 CFR 164.308: Administrative Safeguards
+    - 45 CFR 164.310: Physical Safeguards
+    - 45 CFR 164.312: Technical Safeguards
+    - 45 CFR 164.314: Organizational Requirements
+    - 45 CFR 164.316: Policies and Procedures
     """
     
     def __init__(
         self,
-        config: HIPAAValidatorConfig | None = None,
-        controls: list[ComplianceControl] | None = None,
-    ):
-        self.config = config or HIPAAValidatorConfig()
-        self.controls = controls or HIPAA_AI_CONTROLS
-        self._assessments: list[ComplianceReport] = []
-    
-    def assess_system(
-        self,
-        system_name: str,
         organization: str,
-        scope: str,
-        evidence: dict[str, list[str]],
-        assessor: str = "automated",
-    ) -> ComplianceReport:
+        assessor: str = "Automated Assessment",
+    ):
         """
-        Perform compliance assessment of an AI system.
+        Initialize validator.
         
         Args:
-            system_name: Name of the AI system
-            organization: Organization name
-            scope: Assessment scope description
-            evidence: Control ID to evidence mapping
-            assessor: Name of assessor
-        
-        Returns:
-            ComplianceReport with findings
+            organization: Organization being assessed.
+            assessor: Name of assessor.
         """
-        control_checks = []
+        self.organization = organization
+        self.assessor = assessor
+        self.checks: list[ComplianceCheck] = []
+    
+    def run_full_assessment(
+        self,
+        system_config: dict[str, Any] | None = None,
+    ) -> HIPAAComplianceReport:
+        """
+        Run complete HIPAA compliance assessment.
         
-        for control in self.controls:
-            # Skip addressable if not configured
-            if not self.config.include_addressable and control.control_type == ControlType.ADDRESSABLE:
-                continue
+        Args:
+            system_config: System configuration to validate.
             
-            check = self._check_control(control, evidence.get(control.control_id, []))
-            control_checks.append(check)
+        Returns:
+            HIPAAComplianceReport with all findings.
+        """
+        self.checks = []
+        config = system_config or {}
         
-        # Calculate summary
-        summary = self._calculate_summary(control_checks)
+        # Run all category assessments
+        self._assess_administrative_safeguards(config)
+        self._assess_physical_safeguards(config)
+        self._assess_technical_safeguards(config)
+        self._assess_organizational_requirements(config)
+        self._assess_policies_procedures(config)
         
-        # Determine overall status
-        overall_status = self._determine_overall_status(control_checks)
+        # Calculate overall status and risk
+        overall_status = self._calculate_overall_status()
+        risk_score = self._calculate_risk_score()
         
-        # Generate recommendations
-        recommendations = self._generate_recommendations(control_checks)
-        
-        report = ComplianceReport(
-            report_id=self._generate_report_id(system_name, organization),
-            assessment_name=f"HIPAA Assessment - {system_name}",
-            organization=organization,
-            scope=scope,
+        return HIPAAComplianceReport(
+            organization=self.organization,
             assessment_date=datetime.utcnow(),
-            assessor=assessor,
+            assessor=self.assessor,
+            checks=self.checks,
             overall_status=overall_status,
-            control_checks=control_checks,
-            summary=summary,
-            recommendations=recommendations,
+            risk_score=risk_score,
         )
-        
-        self._assessments.append(report)
-        
-        logger.info(
-            "hipaa_assessment_complete",
-            report_id=report.report_id,
-            system_name=system_name,
-            overall_status=overall_status.value,
-            total_controls=len(control_checks),
-        )
-        
-        return report
     
-    def _check_control(
+    def _assess_administrative_safeguards(
         self,
-        control: ComplianceControl,
-        evidence_provided: list[str],
-    ) -> ControlCheck:
-        """Check a single compliance control."""
-        findings = []
-        recommendations = []
+        config: dict[str, Any],
+    ) -> None:
+        """Assess 45 CFR 164.308 Administrative Safeguards."""
         
-        # Check if evidence covers requirements
-        required_evidence = set(control.evidence_required)
-        provided_evidence = set(evidence_provided)
-        
-        missing_evidence = required_evidence - provided_evidence
-        
-        if not missing_evidence:
-            status = ComplianceStatus.COMPLIANT
-            findings.append("All required evidence provided")
-            risk_level = RiskLevel.LOW
-        elif len(provided_evidence) >= len(required_evidence) // 2:
-            status = ComplianceStatus.PARTIAL
-            findings.append(f"Missing evidence: {', '.join(missing_evidence)}")
-            risk_level = RiskLevel.MEDIUM
-            if self.config.auto_recommendations:
-                recommendations.append(
-                    f"Provide documentation for: {', '.join(missing_evidence)}"
-                )
-        else:
-            status = ComplianceStatus.NON_COMPLIANT
-            findings.append(f"Insufficient evidence. Missing: {', '.join(missing_evidence)}")
-            risk_level = (
-                RiskLevel.CRITICAL
-                if control.control_type == ControlType.REQUIRED
-                else RiskLevel.HIGH
+        # Security Management Process (164.308(a)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-001",
+                name="Risk Analysis",
+                description="Conduct accurate and thorough risk analysis",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "risk_analysis_complete"),
+                cfr_reference="45 CFR 164.308(a)(1)(ii)(A)",
+                findings=["Risk analysis documentation should be reviewed annually"],
+                recommendations=[
+                    "Maintain documented risk analysis",
+                    "Update risk assessment annually",
+                    "Include all ePHI systems in scope",
+                ],
             )
-            if self.config.auto_recommendations:
-                recommendations.append(
-                    f"URGENT: Implement {control.name} control per {control.regulation_reference}"
-                )
-                recommendations.append(control.implementation_guidance)
-        
-        return ControlCheck(
-            control_id=control.control_id,
-            status=status,
-            findings=findings,
-            evidence_provided=evidence_provided,
-            recommendations=recommendations,
-            risk_level=risk_level,
-        )
-    
-    def _calculate_summary(self, checks: list[ControlCheck]) -> dict[str, Any]:
-        """Calculate summary statistics."""
-        status_counts: dict[str, int] = defaultdict(int)
-        risk_counts: dict[str, int] = defaultdict(int)
-        
-        for check in checks:
-            status_counts[check.status.value] += 1
-            if check.risk_level:
-                risk_counts[check.risk_level.value] += 1
-        
-        total = len(checks)
-        compliant = status_counts.get("compliant", 0)
-        
-        return {
-            "total_controls": total,
-            "compliant": compliant,
-            "partial": status_counts.get("partial", 0),
-            "non_compliant": status_counts.get("non_compliant", 0),
-            "not_applicable": status_counts.get("not_applicable", 0),
-            "compliance_rate": round(compliant / total * 100, 1) if total > 0 else 0,
-            "risk_distribution": dict(risk_counts),
-            "critical_risks": risk_counts.get("critical", 0),
-            "high_risks": risk_counts.get("high", 0),
-        }
-    
-    def _determine_overall_status(self, checks: list[ControlCheck]) -> ComplianceStatus:
-        """Determine overall compliance status."""
-        # Required controls must be compliant
-        required_checks = [
-            c for c in checks
-            if self._get_control(c.control_id).control_type == ControlType.REQUIRED
-        ]
-        
-        required_non_compliant = any(
-            c.status == ComplianceStatus.NON_COMPLIANT
-            for c in required_checks
         )
         
-        if required_non_compliant:
+        # Assigned Security Responsibility (164.308(a)(2))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-002",
+                name="Security Officer",
+                description="Designate security official responsible for policies",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "security_officer_assigned"),
+                cfr_reference="45 CFR 164.308(a)(2)",
+                recommendations=[
+                    "Formally designate HIPAA Security Officer",
+                    "Document security responsibilities",
+                ],
+            )
+        )
+        
+        # Workforce Security (164.308(a)(3))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-003",
+                name="Access Authorization",
+                description="Implement policies for authorizing access to ePHI",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "access_authorization_policy"),
+                cfr_reference="45 CFR 164.308(a)(3)(ii)(A)",
+                recommendations=[
+                    "Implement role-based access control",
+                    "Document access authorization procedures",
+                    "Maintain access authorization records",
+                ],
+            )
+        )
+        
+        # Information Access Management (164.308(a)(4))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-004",
+                name="Access Establishment",
+                description="Policies for granting access to ePHI",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "access_management_policy"),
+                cfr_reference="45 CFR 164.308(a)(4)(ii)(B)",
+                recommendations=[
+                    "Implement access provisioning workflow",
+                    "Document access modification procedures",
+                ],
+            )
+        )
+        
+        # Security Awareness Training (164.308(a)(5))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-005",
+                name="Security Training",
+                description="Security awareness and training program",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "security_training_program"),
+                cfr_reference="45 CFR 164.308(a)(5)(i)",
+                recommendations=[
+                    "Implement annual security training",
+                    "Track training completion",
+                    "Include phishing awareness training",
+                ],
+            )
+        )
+        
+        # Contingency Plan (164.308(a)(7))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ADM-006",
+                name="Data Backup Plan",
+                description="Establish procedures for data backup",
+                category=HIPAACategory.ADMINISTRATIVE,
+                status=self._check_config(config, "backup_plan"),
+                cfr_reference="45 CFR 164.308(a)(7)(ii)(A)",
+                recommendations=[
+                    "Implement regular backup procedures",
+                    "Test backup restoration",
+                    "Document backup and recovery procedures",
+                ],
+            )
+        )
+    
+    def _assess_physical_safeguards(
+        self,
+        config: dict[str, Any],
+    ) -> None:
+        """Assess 45 CFR 164.310 Physical Safeguards."""
+        
+        # Facility Access Controls (164.310(a)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="PHY-001",
+                name="Facility Access",
+                description="Limit physical access to information systems",
+                category=HIPAACategory.PHYSICAL,
+                status=self._check_config(config, "facility_access_controls"),
+                cfr_reference="45 CFR 164.310(a)(1)",
+                recommendations=[
+                    "Implement physical access controls",
+                    "Maintain visitor logs",
+                    "Secure server rooms",
+                ],
+            )
+        )
+        
+        # Workstation Use (164.310(b))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="PHY-002",
+                name="Workstation Security",
+                description="Policies for workstation use and security",
+                category=HIPAACategory.PHYSICAL,
+                status=self._check_config(config, "workstation_policy"),
+                cfr_reference="45 CFR 164.310(b)",
+                recommendations=[
+                    "Implement workstation security policy",
+                    "Use screen locks and privacy screens",
+                    "Encrypt workstation storage",
+                ],
+            )
+        )
+        
+        # Device and Media Controls (164.310(d)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="PHY-003",
+                name="Media Disposal",
+                description="Proper disposal of ePHI media",
+                category=HIPAACategory.PHYSICAL,
+                status=self._check_config(config, "media_disposal_policy"),
+                cfr_reference="45 CFR 164.310(d)(2)(i)",
+                recommendations=[
+                    "Implement secure media disposal procedures",
+                    "Maintain disposal records",
+                    "Use certified destruction services",
+                ],
+            )
+        )
+    
+    def _assess_technical_safeguards(
+        self,
+        config: dict[str, Any],
+    ) -> None:
+        """Assess 45 CFR 164.312 Technical Safeguards."""
+        
+        # Access Control (164.312(a)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-001",
+                name="Unique User Identification",
+                description="Assign unique identifier for each user",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "unique_user_ids"),
+                cfr_reference="45 CFR 164.312(a)(2)(i)",
+                recommendations=[
+                    "Implement unique user IDs",
+                    "Prohibit shared accounts",
+                    "Document user ID assignment",
+                ],
+            )
+        )
+        
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-002",
+                name="Automatic Logoff",
+                description="Implement automatic logoff procedures",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "automatic_logoff"),
+                cfr_reference="45 CFR 164.312(a)(2)(iii)",
+                recommendations=[
+                    "Configure session timeouts",
+                    "Implement idle session termination",
+                ],
+            )
+        )
+        
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-003",
+                name="Encryption",
+                description="Implement encryption for ePHI",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "encryption_enabled"),
+                cfr_reference="45 CFR 164.312(a)(2)(iv)",
+                recommendations=[
+                    "Encrypt ePHI at rest",
+                    "Use TLS for data in transit",
+                    "Implement key management",
+                ],
+            )
+        )
+        
+        # Audit Controls (164.312(b))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-004",
+                name="Audit Logging",
+                description="Implement audit controls for ePHI access",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "audit_logging"),
+                cfr_reference="45 CFR 164.312(b)",
+                recommendations=[
+                    "Enable comprehensive audit logging",
+                    "Retain logs for minimum 6 years",
+                    "Implement log monitoring",
+                ],
+            )
+        )
+        
+        # Integrity (164.312(c)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-005",
+                name="Data Integrity",
+                description="Protect ePHI from improper alteration",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "integrity_controls"),
+                cfr_reference="45 CFR 164.312(c)(1)",
+                recommendations=[
+                    "Implement data integrity checks",
+                    "Use checksums for data validation",
+                    "Maintain change logs",
+                ],
+            )
+        )
+        
+        # Transmission Security (164.312(e)(1))
+        self.checks.append(
+            ComplianceCheck(
+                check_id="TEC-006",
+                name="Transmission Security",
+                description="Protect ePHI during transmission",
+                category=HIPAACategory.TECHNICAL,
+                status=self._check_config(config, "transmission_security"),
+                cfr_reference="45 CFR 164.312(e)(1)",
+                recommendations=[
+                    "Use TLS 1.2 or higher",
+                    "Implement end-to-end encryption",
+                    "Disable insecure protocols",
+                ],
+            )
+        )
+    
+    def _assess_organizational_requirements(
+        self,
+        config: dict[str, Any],
+    ) -> None:
+        """Assess 45 CFR 164.314 Organizational Requirements."""
+        
+        self.checks.append(
+            ComplianceCheck(
+                check_id="ORG-001",
+                name="Business Associate Agreements",
+                description="BAAs with all business associates handling ePHI",
+                category=HIPAACategory.ORGANIZATIONAL,
+                status=self._check_config(config, "baa_compliance"),
+                cfr_reference="45 CFR 164.314(a)(1)",
+                recommendations=[
+                    "Maintain BAAs with all vendors",
+                    "Review BAAs annually",
+                    "Track BAA expiration dates",
+                ],
+            )
+        )
+    
+    def _assess_policies_procedures(
+        self,
+        config: dict[str, Any],
+    ) -> None:
+        """Assess 45 CFR 164.316 Policies and Procedures."""
+        
+        self.checks.append(
+            ComplianceCheck(
+                check_id="POL-001",
+                name="Policy Documentation",
+                description="Maintain written security policies",
+                category=HIPAACategory.POLICIES,
+                status=self._check_config(config, "documented_policies"),
+                cfr_reference="45 CFR 164.316(a)",
+                recommendations=[
+                    "Document all security policies",
+                    "Review policies annually",
+                    "Maintain policy version history",
+                ],
+            )
+        )
+        
+        self.checks.append(
+            ComplianceCheck(
+                check_id="POL-002",
+                name="Documentation Retention",
+                description="Retain policies for 6 years",
+                category=HIPAACategory.POLICIES,
+                status=self._check_config(config, "policy_retention"),
+                cfr_reference="45 CFR 164.316(b)(2)(i)",
+                recommendations=[
+                    "Implement 6-year retention policy",
+                    "Archive historical policies",
+                    "Maintain audit trail of changes",
+                ],
+            )
+        )
+    
+    def _check_config(
+        self,
+        config: dict[str, Any],
+        key: str,
+    ) -> ComplianceStatus:
+        """Check configuration for compliance status."""
+        value = config.get(key)
+        
+        if value is True:
+            return ComplianceStatus.COMPLIANT
+        elif value is False:
             return ComplianceStatus.NON_COMPLIANT
-        
-        required_partial = any(
-            c.status == ComplianceStatus.PARTIAL
-            for c in required_checks
-        )
-        
-        if required_partial:
-            return ComplianceStatus.PARTIAL
-        
-        # Check addressable controls
-        addressable_non_compliant = sum(
-            1 for c in checks
+        elif value == "partial":
+            return ComplianceStatus.PARTIALLY_COMPLIANT
+        else:
+            return ComplianceStatus.NEEDS_REVIEW
+    
+    def _calculate_overall_status(self) -> ComplianceStatus:
+        """Calculate overall compliance status."""
+        non_compliant = sum(
+            1 for c in self.checks
             if c.status == ComplianceStatus.NON_COMPLIANT
-            and self._get_control(c.control_id).control_type == ControlType.ADDRESSABLE
+        )
+        partial = sum(
+            1 for c in self.checks
+            if c.status == ComplianceStatus.PARTIALLY_COMPLIANT
         )
         
-        if addressable_non_compliant > len(checks) // 4:
-            return ComplianceStatus.PARTIAL
-        
-        return ComplianceStatus.COMPLIANT
+        if non_compliant > 0:
+            return ComplianceStatus.NON_COMPLIANT
+        elif partial > 3:
+            return ComplianceStatus.PARTIALLY_COMPLIANT
+        elif partial > 0:
+            return ComplianceStatus.NEEDS_REVIEW
+        else:
+            return ComplianceStatus.COMPLIANT
     
-    def _generate_recommendations(self, checks: list[ControlCheck]) -> list[str]:
-        """Generate prioritized recommendations."""
-        recommendations = []
+    def _calculate_risk_score(self) -> float:
+        """Calculate risk score (0-100, lower is better)."""
+        if not self.checks:
+            return 100.0
         
-        # Critical/High risk first
-        for check in sorted(
-            checks,
-            key=lambda c: (
-                0 if c.risk_level == RiskLevel.CRITICAL else
-                1 if c.risk_level == RiskLevel.HIGH else
-                2 if c.risk_level == RiskLevel.MEDIUM else 3
-            )
-        ):
-            if check.status != ComplianceStatus.COMPLIANT:
-                control = self._get_control(check.control_id)
-                recommendations.extend(check.recommendations)
+        scores = {
+            ComplianceStatus.COMPLIANT: 0,
+            ComplianceStatus.PARTIALLY_COMPLIANT: 50,
+            ComplianceStatus.NON_COMPLIANT: 100,
+            ComplianceStatus.NOT_APPLICABLE: 0,
+            ComplianceStatus.NEEDS_REVIEW: 25,
+        }
         
-        return recommendations[:10]  # Top 10 recommendations
-    
-    def _get_control(self, control_id: str) -> ComplianceControl:
-        """Get control by ID."""
-        for control in self.controls:
-            if control.control_id == control_id:
-                return control
-        raise ValueError(f"Control not found: {control_id}")
-    
-    def _generate_report_id(self, system_name: str, organization: str) -> str:
-        """Generate unique report ID."""
-        import time
-        content = f"{system_name}:{organization}:{time.time_ns()}"
-        return f"hipaa_{hashlib.sha256(content.encode()).hexdigest()[:12]}"
-    
-    def list_controls(
-        self,
-        category: HIPAACategory | None = None,
-        control_type: ControlType | None = None,
-    ) -> list[ComplianceControl]:
-        """List available controls with filters."""
-        controls = self.controls
-        
-        if category:
-            controls = [c for c in controls if c.category == category]
-        if control_type:
-            controls = [c for c in controls if c.control_type == control_type]
-        
-        return controls
-    
-    def get_assessment_history(
-        self,
-        organization: str | None = None,
-        limit: int = 10,
-    ) -> list[ComplianceReport]:
-        """Get assessment history."""
-        reports = self._assessments
-        
-        if organization:
-            reports = [r for r in reports if r.organization == organization]
-        
-        return sorted(reports, key=lambda r: r.assessment_date, reverse=True)[:limit]
+        total_score = sum(scores[c.status] for c in self.checks)
+        return total_score / len(self.checks)
